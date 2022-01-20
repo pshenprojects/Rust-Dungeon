@@ -13,6 +13,7 @@ impl Plugin for PlayerPlugin {
             "game_setup_actors",
             SystemStage::single(player_spawn.system()),
         )
+        .add_system(player_jump_to_spawn.system())
         .add_system(player_input.system().label("input"))
         .add_system(player_actions.system().label("actions").after("input"));
     }
@@ -22,19 +23,19 @@ fn player_spawn(
     mut commands: Commands,
     materials: Res<Materials>,
     mut camera_center: ResMut<CameraCenter>,
-    map_query: Query<(&Map)>,
+    // map_query: Query<(&Map)>,
 ) {
     // Create player sprite at map's spawn point (currently defaults to (1, 1))
     let mut spawn_point: Location = Location::default();
-    if let Ok((current_map)) = map_query.single() {
-        let map_spawn = &current_map.1;
-        spawn_point.0 = map_spawn.0;
-        spawn_point.1 = map_spawn.1;
-        // println!(
-        //     "Setting spawn point to {}, {}",
-        //     spawn_point.0, spawn_point.1
-        // );
-    }
+    // if let Ok((current_map)) = map_query.single() {
+    //     let map_spawn = &current_map.1;
+    //     spawn_point.0 = map_spawn.0;
+    //     spawn_point.1 = map_spawn.1;
+    //     // println!(
+    //     //     "Setting spawn point to {}, {}",
+    //     //     spawn_point.0, spawn_point.1
+    //     // );
+    // }
     // move camera to center on player
     camera_center.0 = spawn_point.0 as f32 * TILE_SIZE;
     camera_center.1 = spawn_point.1 as f32 * TILE_SIZE;
@@ -56,6 +57,28 @@ fn player_spawn(
         .insert(Player)
         .insert(Speed::default())
         .insert(spawn_point);
+}
+
+fn player_jump_to_spawn(
+    mut camera_center: ResMut<CameraCenter>,
+    game_state: ResMut<GameState>,
+    map_query: Query<(&Map), Added<Map>>,
+    mut player_query: Query<(&mut Transform, &mut Location), With<Player>>,
+) {
+    if let Ok((mut player_tf, mut player_loc)) = player_query.single_mut() {
+        if let Ok((current_map)) = map_query.single() {
+            let map_spawn = &current_map.1;
+
+            // set player location to map spawn point
+            player_loc.0 = map_spawn.0;
+            player_loc.1 = map_spawn.1;
+            player_tf.translation.x = player_loc.0 as f32 * TILE_SIZE;
+            player_tf.translation.y = player_loc.1 as f32 * TILE_SIZE;
+            //keep the camera on the player
+            camera_center.0 = player_tf.translation.x;
+            camera_center.1 = player_tf.translation.y;
+        }
+    }
 }
 
 fn player_input(

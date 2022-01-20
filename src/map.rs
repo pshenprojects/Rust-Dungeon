@@ -1,4 +1,4 @@
-use crate::{GameState, Location, Map, MapStyle, Tile, MAP_HEIGHT, MAP_WIDTH};
+use crate::{GameState, Location, Map, MapStyle, Tile};
 use array2d::Array2D;
 use bevy::prelude::*;
 use rand::{thread_rng, Rng};
@@ -16,54 +16,55 @@ struct Room {
 }
 
 struct MapMaker {
-    col_min: u32,
-    col_max: u32,
-    row_min: u32,
-    row_max: u32,
-    room_min: u32,
-    room_max: u32,
+    columns: u32,
+    rows: u32,
+    rooms: u32,
+    map_height: u32,
+    map_width: u32,
     // style: MapStyle,
 }
 
 // REMINDER: Array2D get/set is rows then columns (y, x)
 impl MapMaker {
     fn make(&mut self) -> Map {
-        let mut new_map: Array2D<Tile> = Array2D::filled_with(Tile::Wall, MAP_HEIGHT, MAP_WIDTH);
+        let mut new_map: Array2D<Tile> = Array2D::filled_with(
+            Tile::Wall,
+            self.map_height as usize,
+            self.map_width as usize,
+        );
         let mut rng = thread_rng();
         let mut all_rooms: Vec<Room> = Vec::new();
         let mut connections: Vec<(u32, u32)> = Vec::new();
-        let sector_rows: u32 = rng.gen_range(self.row_min..=self.row_max);
-        let sector_columns: u32 = rng.gen_range(self.col_min..=self.col_max);
-        let sector_width: u32 = MAP_WIDTH as u32 / sector_columns;
-        let sector_height: u32 = MAP_HEIGHT as u32 / sector_rows;
+        let sector_width: u32 = self.map_width / self.columns;
+        let sector_height: u32 = self.map_height / self.rows;
         let mut real_rooms: Vec<u32> = Vec::new();
 
         /* Default construction:
         pick r from range room_min..=room_max as # of rooms
-        choose r IDs from 0..(sector_rows*sector_columns)
+        choose r IDs from 0..(self.rows*self.columns)
         iterate through sector columns + rows
-        if column + sector_columns * row == id, make a real room with random dimensions
+        if column + self.columns * row == id, make a real room with random dimensions
         at least 5 x 4, up to sector_width - 1 and sector_height - 1
         else make a dummy 1x1 room
         add this Room to all_rooms
         next: iterate through all_rooms
         real rooms need at least 1 connection made to an adjacent room, up to 4 connections
-        dummy rooms need 0 connections, or 2-4 (no dead ends? are dead ends fine?)
+        dummy rooms can be ignored for now.
         check for strongly connected layout:
-        all real rooms are accessible (tree search thru connections)
+        all real rooms are accessible
         dummy rooms are fine being inaccessible
-        if not strongly connected... rebuild connections from start?
         after strongly connected is proven, delete dummy rooms that aren't connected at all
         after rooms and connections are defined, call make_room for every room
         and make_corridor for every connection
         finally, pick a room to spawn in and label its spawn point
         */
-        let nrooms: u32 = rng.gen_range(self.room_min..=self.room_max);
-        let mut sector_ids: Vec<u32> = (0..(sector_rows * sector_columns)).collect();
-        if nrooms >= sector_rows * sector_columns {
+
+        // pick sectors to hold real rooms
+        let mut sector_ids: Vec<u32> = (0..(self.rows * self.columns)).collect();
+        if self.rooms >= self.rows * self.columns {
             real_rooms = sector_ids;
         } else {
-            for i in 0..nrooms {
+            for i in 0..self.rooms {
                 let pick = rng.gen_range(0..sector_ids.len());
                 real_rooms.push(sector_ids.swap_remove(pick));
             }
@@ -71,9 +72,10 @@ impl MapMaker {
 
         real_rooms.sort();
 
-        for y in 0..sector_rows {
-            for x in 0..sector_columns {
-                let curr_id = x + sector_columns * y;
+        // create a room in every sector
+        for y in 0..self.rows {
+            for x in 0..self.columns {
+                let curr_id = x + self.columns * y;
                 if real_rooms.iter().any(|&id| id == curr_id) {
                     let room_width = rng.gen_range(5..sector_width - 1);
                     let room_height = rng.gen_range(4..sector_height - 1);
@@ -107,30 +109,29 @@ impl MapMaker {
 
         /* generate corridors:
         for every room, consider all possible connections to adjacent rooms
-        pick 1-4 of them for real rooms, 0 or 2-4 of them for dummy rooms
+        pick 1-4 of them for real rooms, dummy rooms can be skipped
         then, pass list of connections to cluster testing function.
         if it fails, keep the list but add more connections and try again until it succeeds
         */
         for room in all_rooms.iter() {
             let mut sectors_adj: Vec<u32> = Vec::new();
-            if room.id % sector_columns == 0 {
+            if room.id % self.columns == 0 {
                 sectors_adj.push(room.id + 1);
-            } else if (room.id + 1) % sector_columns == 0 {
+            } else if (room.id + 1) % self.columns == 0 {
                 sectors_adj.push(room.id - 1);
             } else {
                 sectors_adj.push(room.id - 1);
                 sectors_adj.push(room.id + 1);
             }
-            if room.id < sector_columns {
-                sectors_adj.push(room.id + sector_columns);
-            } else if room.id >= sector_columns * (sector_rows - 1) {
-                sectors_adj.push(room.id - sector_columns);
+            if room.id < self.columns {
+                sectors_adj.push(room.id + self.columns);
+            } else if room.id >= self.columns * (self.rows - 1) {
+                sectors_adj.push(room.id - self.columns);
             } else {
-                sectors_adj.push(room.id - sector_columns);
-                sectors_adj.push(room.id + sector_columns);
+                sectors_adj.push(room.id - self.columns);
+                sectors_adj.push(room.id + self.columns);
             }
-            // dummy rooms have a 50% chance of being skipped over for connection making
-            // test: skipping dummy rooms entirely
+            // dummy rooms can be skipped over for connection making
             if room.dummy {
                 // && rng.gen_bool(0.5) {
                 continue;
@@ -154,7 +155,7 @@ impl MapMaker {
         while !has_all(&cluster, &real_rooms) {
             let mut potential_connection: Vec<(u32, u32)> = Vec::new();
             for &id in cluster.iter() {
-                if (id + 1) % sector_columns != 0 {
+                if (id + 1) % self.columns != 0 {
                     let right = id + 1;
                     if !already_has_connection(&connections, id, right) {
                         if cluster.iter().all(|&id| id != right) {
@@ -162,7 +163,7 @@ impl MapMaker {
                         }
                     }
                 }
-                if id % sector_columns != 0 {
+                if id % self.columns != 0 {
                     let left = id - 1;
                     if !already_has_connection(&connections, id, left) {
                         if cluster.iter().all(|&id| id != left) {
@@ -170,16 +171,16 @@ impl MapMaker {
                         }
                     }
                 }
-                if id < sector_columns * (sector_rows - 1) {
-                    let up = id + sector_columns;
+                if id < self.columns * (self.rows - 1) {
+                    let up = id + self.columns;
                     if !already_has_connection(&connections, id, up) {
                         if cluster.iter().all(|&id| id != up) {
                             potential_connection.push((id, up));
                         }
                     }
                 }
-                if id >= sector_columns {
-                    let down = id - sector_columns;
+                if id >= self.columns {
+                    let down = id - self.columns;
                     if !already_has_connection(&connections, id, down) {
                         if cluster.iter().all(|&id| id != down) {
                             potential_connection.push((id, down));
@@ -405,12 +406,11 @@ fn make_corridor_vertical(
 impl Plugin for MapPlugin {
     fn build(&self, app: &mut AppBuilder) {
         app.insert_resource(MapMaker {
-            col_min: 3,
-            col_max: 4,
-            row_min: 2,
-            row_max: 4,
-            room_min: 2,
-            room_max: 10,
+            columns: 3,
+            rows: 2,
+            rooms: 2,
+            map_height: 32,
+            map_width: 56,
         })
         .add_startup_stage("game_setup_map", SystemStage::single(create_map.system()));
     }
@@ -421,7 +421,15 @@ fn create_map(
     mut map_maker: ResMut<MapMaker>,
     mut game_state: ResMut<GameState>,
 ) {
-    let map = map_maker.make();
-    commands.spawn().insert(map);
-    game_state.has_map = true;
+    if !game_state.has_map {
+        let mut rng = thread_rng();
+        let c: u32 = rng.gen_range(3..=4);
+        let r: u32 = rng.gen_range(2..=4);
+        map_maker.columns = c;
+        map_maker.rows = r;
+        map_maker.rooms = rng.gen_range(2..=c * r);
+        let map = map_maker.make();
+        commands.spawn().insert(map);
+        game_state.has_map = true;
+    }
 }

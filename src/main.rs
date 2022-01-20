@@ -19,6 +19,7 @@ const TIME_STEP: f32 = 1. / 60.;
 pub struct Materials {
     player: Handle<ColorMaterial>,
     ground: Handle<ColorMaterial>,
+    exit: Handle<ColorMaterial>,
     wall: Handle<ColorMaterial>,
     oob: Handle<ColorMaterial>,
 }
@@ -111,6 +112,7 @@ fn setup(
     commands.insert_resource(Materials {
         player: materials.add(Color::rgb(0., 0.8, 0.).into()),
         ground: materials.add(Color::rgb(0.2, 0.2, 0.2).into()),
+        exit: materials.add(Color::rgb(0.8, 0.8, 0.8).into()),
         wall: materials.add(Color::rgb(0.8, 0.2, 0.2).into()),
         oob: materials.add(Color::rgb(0.6, 0.2, 0.2).into()),
     });
@@ -161,35 +163,35 @@ fn update_map(
         return;
     }
     if camera_center.is_changed() {
-        // get range of tiles to draw
-        let left_border = (camera_center.0 - WINDOW_WIDTH / 2.) / TILE_SIZE;
-        let right_border = (camera_center.0 + WINDOW_WIDTH / 2.) / TILE_SIZE;
-        let top_border = (camera_center.1 + WINDOW_HEIGHT / 2.) / TILE_SIZE;
-        let bottom_border = (camera_center.1 - WINDOW_HEIGHT / 2.) / TILE_SIZE;
-        let left_bound: i32 = left_border.floor() as i32;
-        let right_bound: i32 = right_border.ceil() as i32;
-        let top_bound: i32 = top_border.ceil() as i32;
-        let bottom_bound: i32 = bottom_border.floor() as i32;
+        if let Ok((current_map)) = map_query.single() {
+            // get range of tiles to draw
+            let left_border = (camera_center.0 - WINDOW_WIDTH / 2.) / TILE_SIZE;
+            let right_border = (camera_center.0 + WINDOW_WIDTH / 2.) / TILE_SIZE;
+            let top_border = (camera_center.1 + WINDOW_HEIGHT / 2.) / TILE_SIZE;
+            let bottom_border = (camera_center.1 - WINDOW_HEIGHT / 2.) / TILE_SIZE;
+            let left_bound: i32 = left_border.floor() as i32;
+            let right_bound: i32 = right_border.ceil() as i32;
+            let top_bound: i32 = top_border.ceil() as i32;
+            let bottom_bound: i32 = bottom_border.floor() as i32;
 
-        let mut valid_tiles: Vec<&Location> = Vec::new();
-        // clean up any tiles that are already drawn that are no longer in range
-        for (tile_entity, loc) in tiles_query.iter() {
-            if loc.0 > right_bound
-                || loc.0 < left_bound
-                || loc.1 > top_bound
-                || loc.1 < bottom_bound
-            {
-                commands.entity(tile_entity).despawn();
-                // println!("Removing tile at {}, {}", loc.0, loc.1);
-            } else {
-                valid_tiles.push(loc);
+            let mut valid_tiles: Vec<&Location> = Vec::new();
+            // clean up any tiles that are already drawn that are no longer in range
+            for (tile_entity, loc) in tiles_query.iter() {
+                if loc.0 > right_bound
+                    || loc.0 < left_bound
+                    || loc.1 > top_bound
+                    || loc.1 < bottom_bound
+                {
+                    commands.entity(tile_entity).despawn();
+                    // println!("Removing tile at {}, {}", loc.0, loc.1);
+                } else {
+                    valid_tiles.push(loc);
+                }
             }
-        }
-        // draw any tiles in the range that aren't already drawn
-        for y in bottom_bound..=top_bound {
-            for x in left_bound..=right_bound {
-                if !valid_tiles.iter().any(|e| e.0 == x && e.1 == y) {
-                    if let Ok((current_map)) = map_query.single() {
+            // draw any tiles in the range that aren't already drawn
+            for y in bottom_bound..=top_bound {
+                for x in left_bound..=right_bound {
+                    if !valid_tiles.iter().any(|e| e.0 == x && e.1 == y) {
                         let map_data = &current_map.0;
                         let possibly_tile = map_data.get(y as usize, x as usize);
                         let mat = match possibly_tile {
