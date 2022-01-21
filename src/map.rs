@@ -1,4 +1,7 @@
-use crate::{GameState, Location, Map, MapStyle, Tile};
+use crate::{
+    FinishedMapEvent, GameState, Location, Map, MapElement, MapStyle, Materials, OnMap, Stairs,
+    Tile, WinSize,
+};
 use array2d::Array2D;
 use bevy::prelude::*;
 use rand::{thread_rng, Rng};
@@ -26,7 +29,7 @@ struct MapMaker {
 
 // REMINDER: Array2D get/set is rows then columns (y, x)
 impl MapMaker {
-    fn make(&mut self) -> Map {
+    fn make(&mut self) -> (Map, Location) {
         let mut new_map: Array2D<Tile> = Array2D::filled_with(
             Tile::Wall,
             self.map_height as usize,
@@ -106,6 +109,10 @@ impl MapMaker {
         // pick a random spawn location within a random real room
         let pick_spawn = rng.gen_range(0..real_rooms.len());
         let spawn_room_id = real_rooms[pick_spawn];
+
+        // pick a random exit location within a random real room
+        let pick_exit = rng.gen_range(0..real_rooms.len());
+        let exit_room_id = real_rooms[pick_exit];
 
         /* generate corridors:
         for every room, consider all possible connections to adjacent rooms
@@ -291,11 +298,30 @@ impl MapMaker {
         //     spawn_room_id
         // );
         if let Some(spawn_room) = all_rooms.iter().find(|&r| r.id == spawn_room_id) {
-            let random_x = spawn_room.left + rng.gen_range(0..spawn_room.width);
-            let random_y = spawn_room.bottom + rng.gen_range(0..spawn_room.height);
-            Map(new_map, Location(random_x as i32, random_y as i32))
+            let random_spawn_x = spawn_room.left + rng.gen_range(0..spawn_room.width);
+            let random_spawn_y = spawn_room.bottom + rng.gen_range(0..spawn_room.height);
+            if let Some(exit_room) = all_rooms.iter().find(|&r| r.id == exit_room_id) {
+                let random_exit_x = exit_room.left + rng.gen_range(0..exit_room.width);
+                let random_exit_y = exit_room.bottom + rng.gen_range(0..exit_room.height);
+                // println!("Setting exit point to {}, {}", random_exit_x, random_exit_y);
+                (
+                    Map(
+                        new_map,
+                        Location(random_spawn_x as i32, random_spawn_y as i32),
+                    ),
+                    Location(random_exit_x as i32, random_exit_y as i32),
+                )
+            } else {
+                (
+                    Map(
+                        new_map,
+                        Location(random_spawn_x as i32, random_spawn_y as i32),
+                    ),
+                    Location(random_spawn_x as i32, random_spawn_y as i32),
+                )
+            }
         } else {
-            Map(new_map, Location::default())
+            (Map(new_map, Location::default()), Location::default())
         }
     }
 }
@@ -412,7 +438,10 @@ impl Plugin for MapPlugin {
             map_height: 32,
             map_width: 56,
         })
-        .add_startup_stage("game_setup_map", SystemStage::single(create_map.system()));
+        .add_startup_stage("game_setup_map", SystemStage::single(create_map.system()))
+        .add_event::<FinishedMapEvent>()
+        .add_system(cleanup_map.system().label("cleanup").after("actions"))
+        .add_system(create_map.system().after("cleanup"));
     }
 }
 
@@ -420,6 +449,8 @@ fn create_map(
     mut commands: Commands,
     mut map_maker: ResMut<MapMaker>,
     mut game_state: ResMut<GameState>,
+    materials: Res<Materials>,
+    window: Res<WinSize>,
 ) {
     if !game_state.has_map {
         let mut rng = thread_rng();
@@ -428,8 +459,46 @@ fn create_map(
         map_maker.columns = c;
         map_maker.rows = r;
         map_maker.rooms = rng.gen_range(2..=c * r);
-        let map = map_maker.make();
+        let (map, exit) = map_maker.make();
         commands.spawn().insert(map);
+        commands
+            .spawn_bundle(SpriteBundle {
+                material: materials.exit.clone(),
+                sprite: Sprite::new(Vec2::new(window.tile * 7. / 8., window.tile * 7. / 8.)),
+                transform: Transform {
+                    translation: Vec3::new(
+                        exit.0 as f32 * window.tile,
+                        exit.1 as f32 * window.tile,
+                        6.,
+                    ),
+                    ..Default::default()
+                },
+                ..Default::default()
+            })
+            .insert(Stairs)
+            .insert(OnMap(exit));
         game_state.has_map = true;
+    }
+}
+
+fn cleanup_map(
+    mut commands: Commands,
+    mut ev_finished_map: EventReader<FinishedMapEvent>,
+    mut game_state: ResMut<GameState>,
+    map_query: Query<Entity, With<Map>>,
+    object_query: Query<Entity, With<OnMap>>,
+    tiles_query: Query<Entity, With<MapElement>>,
+) {
+    for ev in ev_finished_map.iter() {
+        game_state.has_map = false;
+        for obj_entity in object_query.iter() {
+            commands.entity(obj_entity).despawn();
+        }
+        for tiles_entity in tiles_query.iter() {
+            commands.entity(tiles_entity).despawn();
+        }
+        for map_entity in map_query.iter() {
+            commands.entity(map_entity).despawn();
+        }
     }
 }

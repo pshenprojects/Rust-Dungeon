@@ -8,8 +8,6 @@ use bevy::prelude::*;
 use map::MapPlugin;
 use player::PlayerPlugin;
 
-const MAP_HEIGHT: usize = 32;
-const MAP_WIDTH: usize = 56;
 const WINDOW_HEIGHT: f32 = 600.;
 const WINDOW_WIDTH: f32 = 800.;
 const TILE_SIZE: f32 = 64.;
@@ -40,6 +38,7 @@ enum MapStyle {
 struct WinSize {
     w: f32,
     h: f32,
+    tile: f32,
 }
 
 #[derive(Default)]
@@ -63,6 +62,12 @@ impl Default for Speed {
 
 struct ActionToPerform;
 struct Direction(i32, i32);
+// default direction is facing down
+impl Default for Direction {
+    fn default() -> Self {
+        Self(0, -1)
+    }
+}
 
 struct IsCamera;
 
@@ -76,6 +81,11 @@ impl Default for Location {
 
 struct Map(Array2D<Tile>, Location);
 struct MapElement;
+
+struct OnMap(Location);
+struct Stairs;
+
+struct FinishedMapEvent;
 // endregion: Components
 
 fn main() {
@@ -120,6 +130,7 @@ fn setup(
     commands.insert_resource(WinSize {
         w: window.width(),
         h: window.height(),
+        tile: TILE_SIZE,
     });
     // window.set_position(IVec2::new(1620, 100));
     commands.insert_resource(GameState::default());
@@ -155,6 +166,7 @@ fn update_map(
     mut commands: Commands,
     camera_center: Res<CameraCenter>,
     materials: Res<Materials>,
+    window: Res<WinSize>,
     game_state: ResMut<GameState>,
     map_query: Query<(&Map)>,
     tiles_query: Query<(Entity, &Location), With<MapElement>>,
@@ -165,10 +177,10 @@ fn update_map(
     if camera_center.is_changed() {
         if let Ok((current_map)) = map_query.single() {
             // get range of tiles to draw
-            let left_border = (camera_center.0 - WINDOW_WIDTH / 2.) / TILE_SIZE;
-            let right_border = (camera_center.0 + WINDOW_WIDTH / 2.) / TILE_SIZE;
-            let top_border = (camera_center.1 + WINDOW_HEIGHT / 2.) / TILE_SIZE;
-            let bottom_border = (camera_center.1 - WINDOW_HEIGHT / 2.) / TILE_SIZE;
+            let left_border = (camera_center.0 - window.w / 2.) / window.tile;
+            let right_border = (camera_center.0 + window.w / 2.) / window.tile;
+            let top_border = (camera_center.1 + window.h / 2.) / window.tile;
+            let bottom_border = (camera_center.1 - window.h / 2.) / window.tile;
             let left_bound: i32 = left_border.floor() as i32;
             let right_bound: i32 = right_border.ceil() as i32;
             let top_bound: i32 = top_border.ceil() as i32;
@@ -206,11 +218,11 @@ fn update_map(
                         commands
                             .spawn_bundle(SpriteBundle {
                                 material: mat,
-                                sprite: Sprite::new(Vec2::new(TILE_SIZE, TILE_SIZE)),
+                                sprite: Sprite::new(Vec2::new(window.tile, window.tile)),
                                 transform: Transform {
                                     translation: Vec3::new(
-                                        x as f32 * TILE_SIZE,
-                                        y as f32 * TILE_SIZE,
+                                        x as f32 * window.tile,
+                                        y as f32 * window.tile,
                                         5.,
                                     ),
                                     ..Default::default()

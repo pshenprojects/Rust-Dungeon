@@ -8,6 +8,11 @@ Most popularly associated with the Pokemon Mystery Dungeon series, a Mystery Dun
 
 The basic gameplay is eight-directional grid-based movement through randomly generated maps, populated by enemies and items. Player and enemies alike move in turns, with enemies only acting after the player makes a move. These games generally have a strong emphasis on positioning, as players may have to decide on movements based on enemy dangers such as ranged attacks or being surrounded.
 
+## How to Play
+Use the arrow keys to move the green square through the maze. The goal is to find the white 'exit' tile. When on top of the exit, press the spacebar to enter the next map.
+
+![Screenshot with exit tile](images/screen_with_stairs.png)
+
 ## How It Works
 Although the **References Used** section contains a more in depth explanation and additional functionality not currently implemented in my code, the basic idea of the algorithm is:
 1. Divide the map space into *M* columns and *N* rows to make *M* x *N* sectors

@@ -1,6 +1,6 @@
 use crate::{
-    ActionToPerform, CameraCenter, Direction, GameState, Location, Map, Materials, Player, Speed,
-    Tile, TILE_SIZE, TIME_STEP,
+    ActionToPerform, CameraCenter, Direction, FinishedMapEvent, GameState, Location, Map,
+    Materials, OnMap, Player, Speed, Stairs, Tile, WinSize, TIME_STEP,
 };
 use bevy::prelude::*;
 
@@ -13,7 +13,7 @@ impl Plugin for PlayerPlugin {
             "game_setup_actors",
             SystemStage::single(player_spawn.system()),
         )
-        .add_system(player_jump_to_spawn.system())
+        .add_system(player_jump_to_spawn.system().before("input"))
         .add_system(player_input.system().label("input"))
         .add_system(player_actions.system().label("actions").after("input"));
     }
@@ -22,6 +22,7 @@ impl Plugin for PlayerPlugin {
 fn player_spawn(
     mut commands: Commands,
     materials: Res<Materials>,
+    window: Res<WinSize>,
     mut camera_center: ResMut<CameraCenter>,
     // map_query: Query<(&Map)>,
 ) {
@@ -37,17 +38,17 @@ fn player_spawn(
     //     // );
     // }
     // move camera to center on player
-    camera_center.0 = spawn_point.0 as f32 * TILE_SIZE;
-    camera_center.1 = spawn_point.1 as f32 * TILE_SIZE;
+    camera_center.0 = spawn_point.0 as f32 * window.tile;
+    camera_center.1 = spawn_point.1 as f32 * window.tile;
 
     commands
         .spawn_bundle(SpriteBundle {
             material: materials.player.clone(),
-            sprite: Sprite::new(Vec2::new(TILE_SIZE * 2. / 3., TILE_SIZE * 2. / 3.)),
+            sprite: Sprite::new(Vec2::new(window.tile * 2. / 3., window.tile * 2. / 3.)),
             transform: Transform {
                 translation: Vec3::new(
-                    spawn_point.0 as f32 * TILE_SIZE,
-                    spawn_point.1 as f32 * TILE_SIZE,
+                    spawn_point.0 as f32 * window.tile,
+                    spawn_point.1 as f32 * window.tile,
                     10.,
                 ),
                 ..Default::default()
@@ -61,6 +62,7 @@ fn player_spawn(
 
 fn player_jump_to_spawn(
     mut camera_center: ResMut<CameraCenter>,
+    window: Res<WinSize>,
     game_state: ResMut<GameState>,
     map_query: Query<(&Map), Added<Map>>,
     mut player_query: Query<(&mut Transform, &mut Location), With<Player>>,
@@ -72,8 +74,8 @@ fn player_jump_to_spawn(
             // set player location to map spawn point
             player_loc.0 = map_spawn.0;
             player_loc.1 = map_spawn.1;
-            player_tf.translation.x = player_loc.0 as f32 * TILE_SIZE;
-            player_tf.translation.y = player_loc.1 as f32 * TILE_SIZE;
+            player_tf.translation.x = player_loc.0 as f32 * window.tile;
+            player_tf.translation.y = player_loc.1 as f32 * window.tile;
             //keep the camera on the player
             camera_center.0 = player_tf.translation.x;
             camera_center.1 = player_tf.translation.y;
@@ -85,17 +87,29 @@ fn player_input(
     mut commands: Commands,
     keyboard_input: Res<Input<KeyCode>>,
     mut game_state: ResMut<GameState>,
-    map_query: Query<(&Map)>,
+    mut ev_finished_map: EventWriter<FinishedMapEvent>,
+    map_query: Query<&Map>,
+    stairs_query: Query<(&OnMap), With<Stairs>>,
     mut player_query: Query<(&mut Location), With<Player>>,
 ) {
     // in the middle of a move, ignore inputs until finished
-    if game_state.animating_actions {
+    // alternatively, if the map doesn't exist
+    if game_state.animating_actions || !game_state.has_map {
         return;
     }
 
     if let Ok((mut location)) = player_query.single_mut() {
-        if let Ok((current_map)) = map_query.single() {
+        if let Ok(current_map) = map_query.single() {
             let map_data = &current_map.0;
+            // pressing SPACE on stairs finishes the current map
+            if keyboard_input.pressed(KeyCode::Space) {
+                for (loc_data) in stairs_query.iter() {
+                    let stair_loc = &loc_data.0;
+                    if stair_loc.0 == location.0 && stair_loc.1 == location.1 {
+                        ev_finished_map.send(FinishedMapEvent);
+                    }
+                }
+            }
             // allows 8 way movement
             let mut xdir: i32 = if keyboard_input.pressed(KeyCode::Left) {
                 -1
@@ -164,6 +178,7 @@ fn player_actions(
     mut game_state: ResMut<GameState>,
     mut action_query: Query<(Entity, &Direction), With<ActionToPerform>>,
     mut camera_center: ResMut<CameraCenter>,
+    window: Res<WinSize>,
     mut player_query: Query<(&Speed, &mut Transform, &Location), With<Player>>,
 ) {
     if !game_state.animating_actions {
@@ -176,12 +191,12 @@ fn player_actions(
             let move_y = dir.1 as f32;
 
             //get destination
-            let dest_x = player_loc.0 as f32 * TILE_SIZE;
-            let dest_y = player_loc.1 as f32 * TILE_SIZE;
+            let dest_x = player_loc.0 as f32 * window.tile;
+            let dest_y = player_loc.1 as f32 * window.tile;
 
             //prospective step
-            let step_x = player_tf.translation.x + move_x * speed.0 * TILE_SIZE * TIME_STEP;
-            let step_y = player_tf.translation.y + move_y * speed.0 * TILE_SIZE * TIME_STEP;
+            let step_x = player_tf.translation.x + move_x * speed.0 * window.tile * TIME_STEP;
+            let step_y = player_tf.translation.y + move_y * speed.0 * window.tile * TIME_STEP;
 
             //lock to next tile position if close enough and allow for input again
             let curr_dist_x = (dest_x - player_tf.translation.x).abs();
