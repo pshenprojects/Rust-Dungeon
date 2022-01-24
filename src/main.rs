@@ -10,7 +10,7 @@ use player::PlayerPlugin;
 
 const WINDOW_HEIGHT: f32 = 600.;
 const WINDOW_WIDTH: f32 = 800.;
-const TILE_SIZE: f32 = 64.;
+const TILE_SIZE: f32 = 48.;
 const TIME_STEP: f32 = 1. / 60.;
 
 // region: Resources
@@ -56,7 +56,7 @@ struct Player;
 struct Speed(f32); // speed is measured in tiles per second
 impl Default for Speed {
     fn default() -> Self {
-        Self(5.)
+        Self(10.)
     }
 }
 

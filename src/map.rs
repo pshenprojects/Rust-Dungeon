@@ -41,6 +41,7 @@ impl MapMaker {
         let sector_width: u32 = self.map_width / self.columns;
         let sector_height: u32 = self.map_height / self.rows;
         let mut real_rooms: Vec<u32> = Vec::new();
+        let mut can_merge_id: Vec<bool> = vec![true; (self.rows * self.columns) as usize];
 
         /* Default construction:
         pick r from range room_min..=room_max as # of rooms
@@ -80,10 +81,10 @@ impl MapMaker {
             for x in 0..self.columns {
                 let curr_id = x + self.columns * y;
                 if real_rooms.iter().any(|&id| id == curr_id) {
-                    let room_width = rng.gen_range(5..sector_width - 1);
-                    let room_height = rng.gen_range(4..sector_height - 1);
-                    let room_left = rng.gen_range(1..(sector_width - room_width));
-                    let room_bottom = rng.gen_range(1..(sector_height - room_height));
+                    let room_width = rng.gen_range(5..sector_width - 2);
+                    let room_height = rng.gen_range(4..sector_height - 2);
+                    let room_left = rng.gen_range(2..sector_width - room_width);
+                    let room_bottom = rng.gen_range(2..sector_height - room_height);
                     all_rooms.push(Room {
                         id: curr_id,
                         dummy: false,
@@ -91,10 +92,10 @@ impl MapMaker {
                         width: room_width,
                         bottom: room_bottom + y * sector_height,
                         height: room_height,
-                    })
+                    });
                 } else {
-                    let room_left = rng.gen_range(1..sector_width - 1);
-                    let room_bottom = rng.gen_range(1..sector_height - 1);
+                    let room_left = rng.gen_range(2..sector_width - 1);
+                    let room_bottom = rng.gen_range(2..sector_height - 1);
                     all_rooms.push(Room {
                         id: curr_id,
                         dummy: true,
@@ -102,7 +103,8 @@ impl MapMaker {
                         width: 1,
                         bottom: room_bottom + y * sector_height,
                         height: 1,
-                    })
+                    });
+                    can_merge_id[curr_id as usize] = false;
                 }
             }
         }
@@ -148,7 +150,12 @@ impl MapMaker {
                     let pick = rng.gen_range(0..sectors_adj.len());
                     let id = sectors_adj.swap_remove(pick);
                     if !already_has_connection(&connections, room.id, id) {
-                        connections.push((room.id, id));
+                        // when adding a new connection, always try to keep it smaller-to-larger
+                        if room.id > id {
+                            connections.push((id, room.id));
+                        } else {
+                            connections.push((room.id, id));
+                        }
                     }
                 }
             }
@@ -196,7 +203,13 @@ impl MapMaker {
                 }
             }
             let pick = rng.gen_range(0..potential_connection.len());
-            connections.push(potential_connection[pick]);
+            let (id1, id2) = potential_connection[pick];
+            // when adding a new connection, always try to keep it smaller-to-larger
+            if id1 > id2 {
+                connections.push((id2, id1));
+            } else {
+                connections.push((id1, id2));
+            }
             // println!(
             //     "adding connection between sectors {} and {}",
             //     potential_connection[pick].0, potential_connection[pick].1,
@@ -215,78 +228,51 @@ impl MapMaker {
                 //     );
             }
         }
-        // now, draw all the connections
+        // now, draw all the connections: id1 should always be smaller than id2
         for connect in connections.iter() {
             let &(id1, id2) = connect;
-            let diff = (id1 as i32 - id2 as i32).abs();
+            let diff = id2 - id1;
             if let Some(room1) = all_rooms.iter().find(|&r| r.id == id1) {
                 if let Some(room2) = all_rooms.iter().find(|&r| r.id == id2) {
                     // println!("Connecting sectors {} and {}", id1, id2);
+                    // if both sides of the connections are real rooms
+                    // 10% chance of merging if they aren't already merged elsewhere
+                    if can_merge_id[id1 as usize] && can_merge_id[id2 as usize] && rng.gen_bool(0.1)
+                    {
+                        merge_rooms(&mut new_map, &room1, &room2);
+                        can_merge_id[id1 as usize] = false;
+                        can_merge_id[id2 as usize] = false;
+                    }
                     // if horizontal
-                    if diff <= 1 {
-                        if id1 < id2 {
-                            let xleft: i32 = (room1.left + room1.width - 1) as i32;
-                            let random_yleft: i32 =
-                                (room1.bottom + rng.gen_range(0..room1.height)) as i32;
-                            let xright: i32 = room2.left as i32;
-                            let random_yright: i32 =
-                                (room2.bottom + rng.gen_range(0..room2.height)) as i32;
-                            let point1: Location = Location(xleft, random_yleft);
-                            let point2: Location = Location(xright, random_yright);
-                            // println!(
-                            //     "Drawing horizontal connection between {}, {} and {}, {}",
-                            //     point1.0, point1.1, point2.0, point2.1
-                            // );
-                            let random_mid: i32 = rng.gen_range(xleft + 1..xright);
-                            make_corridor_horizontal(&mut new_map, &point1, &point2, random_mid);
-                        } else {
-                            let xleft: i32 = (room2.left + room2.width - 1) as i32;
-                            let random_yleft: i32 =
-                                (room2.bottom + rng.gen_range(0..room2.height)) as i32;
-                            let xright: i32 = room1.left as i32;
-                            let random_yright: i32 =
-                                (room1.bottom + rng.gen_range(0..room1.height)) as i32;
-                            let point1: Location = Location(xleft, random_yleft);
-                            let point2: Location = Location(xright, random_yright);
-                            // println!(
-                            //     "Drawing horizontal connection between {}, {} and {}, {}",
-                            //     point1.0, point1.1, point2.0, point2.1
-                            // );
-                            let random_mid: i32 = rng.gen_range(xleft + 1..xright);
-                            make_corridor_horizontal(&mut new_map, &point1, &point2, random_mid);
-                        }
+                    else if diff <= 1 {
+                        let xleft: i32 = (room1.left + room1.width - 1) as i32;
+                        let random_yleft: i32 =
+                            (room1.bottom + rng.gen_range(0..room1.height)) as i32;
+                        let xright: i32 = room2.left as i32;
+                        let random_yright: i32 =
+                            (room2.bottom + rng.gen_range(0..room2.height)) as i32;
+                        let point1: Location = Location(xleft, random_yleft);
+                        let point2: Location = Location(xright, random_yright);
+                        // println!(
+                        //     "Drawing horizontal connection between {}, {} and {}, {}",
+                        //     point1.0, point1.1, point2.0, point2.1
+                        // );
+                        let random_mid: i32 = rng.gen_range(xleft + 2..xright - 1);
+                        make_corridor_horizontal(&mut new_map, &point1, &point2, random_mid);
                     } else {
-                        if id1 < id2 {
-                            let ybottom: i32 = (room1.bottom + room1.height - 1) as i32;
-                            let random_xbottom: i32 =
-                                (room1.left + rng.gen_range(0..room1.width)) as i32;
-                            let ytop: i32 = room2.bottom as i32;
-                            let random_xtop: i32 =
-                                (room2.left + rng.gen_range(0..room2.width)) as i32;
-                            let point1: Location = Location(random_xbottom, ybottom);
-                            let point2: Location = Location(random_xtop, ytop);
-                            // println!(
-                            //     "Drawing vertical connection between {}, {} and {}, {}",
-                            //     point1.0, point1.1, point2.0, point2.1
-                            // );
-                            let random_mid: i32 = rng.gen_range(ybottom + 1..ytop);
-                            make_corridor_vertical(&mut new_map, &point1, &point2, random_mid);
-                        } else {
-                            let ybottom: i32 = (room2.bottom + room2.height - 1) as i32;
-                            let random_xbottom: i32 =
-                                (room2.left + rng.gen_range(0..room2.width)) as i32;
-                            let ytop: i32 = room1.bottom as i32;
-                            let random_xtop: i32 =
-                                (room1.left + rng.gen_range(0..room1.width)) as i32;
-                            let point1: Location = Location(random_xbottom, ybottom);
-                            let point2: Location = Location(random_xtop, ytop);
-                            // println!(
-                            //     "Drawing vertical connection between {}, {} and {}, {}",
-                            //     point1.0, point1.1, point2.0, point2.1
-                            // );
-                            let random_mid: i32 = rng.gen_range(ybottom + 1..ytop);
-                            make_corridor_vertical(&mut new_map, &point1, &point2, random_mid);
-                        }
+                        let ybottom: i32 = (room1.bottom + room1.height - 1) as i32;
+                        let random_xbottom: i32 =
+                            (room1.left + rng.gen_range(0..room1.width)) as i32;
+                        let ytop: i32 = room2.bottom as i32;
+                        let random_xtop: i32 = (room2.left + rng.gen_range(0..room2.width)) as i32;
+                        let point1: Location = Location(random_xbottom, ybottom);
+                        let point2: Location = Location(random_xtop, ytop);
+                        // println!(
+                        //     "Drawing vertical connection between {}, {} and {}, {}",
+                        //     point1.0, point1.1, point2.0, point2.1
+                        // );
+                        let random_mid: i32 = rng.gen_range(ybottom + 2..ytop - 1);
+                        make_corridor_vertical(&mut new_map, &point1, &point2, random_mid);
                     }
                 }
             }
@@ -379,6 +365,18 @@ fn make_room(map: &mut Array2D<Tile>, room: &Room) {
     //     "Creating a {}x{} room at {}, {} with id {}",
     //     room.width, room.height, room.left, room.bottom, room.id
     // );
+}
+
+fn merge_rooms(map: &mut Array2D<Tile>, room1: &Room, room2: &Room) {
+    let big_left = room1.left.min(room2.left);
+    let big_bottom = room1.bottom.min(room2.bottom);
+    let big_right = (room1.left + room1.width).max(room2.left + room2.width);
+    let big_top = (room1.bottom + room1.height).max(room2.bottom + room2.height);
+    for y in big_bottom..big_top {
+        for x in big_left..big_right {
+            map.set(y as usize, x as usize, Tile::Ground);
+        }
+    }
 }
 
 // make sure to pass point arguments left to right, and bridge_x is between the two points

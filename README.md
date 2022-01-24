@@ -30,11 +30,16 @@ Below is a demonstration. The two tiles outlined in yellow are 1x1 dummy rooms, 
 
 ### Hallway Generation
 A single straight line connecting two rooms is not very elegant and sometime impossible depending on the positioning, so instead hallways are extended outwards from the closest parallel edge of each room, then linked at some random midpoint between the two. This creates a more 'jagged' connection between rooms, dummy or otherwise.
+
+### Room Merging
+When two rooms are in adjacent sectors and supposed to be linked by a hallway, the algorithm can instead merge them together into one larger room. this preserves the original hallways leading out of both of the original rooms, but obfuscates the grid pattern of sectors more, creating a larger room on the map with multiple possible exits in the same direction.
+![A merged room](images/merged_room_demo.png)
+
 ## Current Issues
 The algorithm is missing several sanity checks, such as sector size vs minimum room size. There are also some quirks with hallway generation, since there are no checks to make sure hallways don't collide.
 
-For example, the following screenshot shows a triple junction off a dummy room where two of the connections run along each other for several tiles, creating the appearance of a 2x3 room.
-![A confusing feature, hallways traced in blue](images/path_gen_issues_demo.png)
+Although the most recent version makes sure hallways have a 1-tile buffer zone from the edges of rooms, dummy rooms can still have hallways intersect or run alongside each other, and the buffer zone does not take room merges into account that could extend the original room beyond the buffer zone.
+![A confusing feature, hallways traced in blue](images/path_gen_issues_2_demo.png)
 
 ### References Used
 - TheZZAZZGlitch's video on Pokemon Mystery Dungeon's generation algorithms:
