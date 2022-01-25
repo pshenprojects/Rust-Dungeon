@@ -140,12 +140,11 @@ impl MapMaker {
                 sectors_adj.push(room.id - self.columns);
                 sectors_adj.push(room.id + self.columns);
             }
-            // dummy rooms can be skipped over for connection making
-            if room.dummy {
-                // && rng.gen_bool(0.5) {
+            // rng chance to skip making connections to a dummy room
+            if room.dummy && rng.gen_bool(0.5) {
                 continue;
             } else {
-                let nconnections = rng.gen_range(1..sectors_adj.len());
+                let nconnections = rng.gen_range(1..=sectors_adj.len());
                 for i in 0..nconnections {
                     let pick = rng.gen_range(0..sectors_adj.len());
                     let id = sectors_adj.swap_remove(pick);
@@ -231,6 +230,10 @@ impl MapMaker {
         // now, draw all the connections: id1 should always be smaller than id2
         for connect in connections.iter() {
             let &(id1, id2) = connect;
+            // skip any connections that do not involve the complete cluster
+            if !cluster.iter().any(|&id| id == id1 || id == id2) {
+                continue;
+            }
             let diff = id2 - id1;
             if let Some(room1) = all_rooms.iter().find(|&r| r.id == id1) {
                 if let Some(room2) = all_rooms.iter().find(|&r| r.id == id2) {
